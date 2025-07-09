@@ -1,0 +1,85 @@
+.
+├── backend
+│   ├── database
+│   │   └── schema.sql
+│   ├── Dockerfile
+│   ├── eng.traineddata
+│   ├── fas.traineddata
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── src
+│   │   ├── controllers
+│   │   │   ├── settingsController.js
+│   │   │   └── uploadController.js
+│   │   ├── index.js
+│   │   ├── queue
+│   │   │   ├── imageProcessor.js
+│   │   │   ├── queueManager.js
+│   │   │   └── queueService.js
+│   │   ├── routes
+│   │   │   ├── searchRoutes.js
+│   │   │   ├── settingsRoutes.js
+│   │   │   └── uploadRoutes.js
+│   │   ├── services
+│   │   │   ├── aiService.js
+│   │   │   ├── databaseService.js
+│   │   │   ├── fileService.js
+│   │   │   ├── ocrService.js
+│   │   │   └── settingsService.js
+│   │   └── workers
+│   │       └── imageProcessor.js
+│   └── uploads
+│       ├── 042d1b1b-a164-4ffa-83ae-ee03df1cbac5.png
+│       ├── 1d03d664-780a-4a9f-9927-c4640c02616e.JPG
+│       ├── 38e844ee-3e0b-48b2-811f-74b40f5ad5f6.JPG
+│       ├── 47576bff-21c8-405d-90c4-3126865e3a4a.JPG
+│       ├── 4f729297-f1b4-4098-806d-24aa1369d361.png
+│       ├── 809ef8ec-fd9a-4c22-9691-b179a6daf095.JPG
+│       ├── 90e4fc68-8314-490e-960b-20a74287805b.JPG
+│       └── ac4eda67-234f-44c1-a102-b291ae05ce4b.jpeg
+├── cursor-ai.role
+├── docker-compose.yml
+├── Docs
+│   ├── 01-پرامپت-اولیه-پروژه.md
+│   ├── 02-چک-لیست-توسعه.md
+│   └── 03-آخرین-مستندات-پروژه.md
+├── env.example
+├── frontend
+│   ├── =
+│   ├── Dockerfile
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── public
+│   │   ├── favicon.svg
+│   │   └── vite.svg
+│   ├── README.md
+│   ├── src
+│   │   ├── App.css
+│   │   ├── App.tsx
+│   │   ├── assets
+│   │   │   └── react.svg
+│   │   ├── components
+│   │   │   ├── FileDetails.tsx
+│   │   │   ├── FileList.tsx
+│   │   │   ├── FileUploader.tsx
+│   │   │   └── Settings.tsx
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   ├── services
+│   │   │   └── api.ts
+│   │   ├── types
+│   │   │   └── index.ts
+│   │   └── vite-env.d.ts
+│   ├── tailwind.config.js
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts
+├── README.md
+├── start.sh
+├── structure.txt
+└── test.png
+
+18 directories, 65 files

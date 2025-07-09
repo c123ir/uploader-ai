@@ -1,482 +1,435 @@
-// frontend/src/components/FileList.tsx
+// frontend/src/components/FileList.tsx - گالری حرفه‌ای فایل‌ها با جستجو و فیلتر
 import React, { useState, useEffect, useMemo } from 'react';
-import { ApiService } from '../services/api';
+import { Search, Filter, Grid3X3, List, Eye, Download, Copy, FileText, SortDesc, SortAsc } from 'lucide-react';
+import { getFilesList, searchFiles } from '../services/api';
 import FileDetails from './FileDetails';
 import type { FileUpload } from '../types';
 
-interface FileListProps {
-  refreshTrigger: number;
-}
-
-const FileList: React.FC<FileListProps> = ({ refreshTrigger }) => {
+const FileList: React.FC = () => {
   const [files, setFiles] = useState<FileUpload[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedFile, setSelectedFile] = useState<FileUpload | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<'grid' | 'list'>('grid');
-  const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [selectedFilter, setSelectedFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'size'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedFile, setSelectedFile] = useState<FileUpload | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
 
-  // Helpers
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 بایت';
-    const k = 1024;
-    const sizes = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
+  // انواع فایل برای فیلتر
+  const fileTypeFilters = [
+    { value: 'all', label: 'همه فایل‌ها', icon: '📁', count: 0 },
+    { value: 'check', label: 'چک‌ها', icon: '💵', count: 0 },
+    { value: 'contract', label: 'قراردادها', icon: '📋', count: 0 },
+    { value: 'invoice', label: 'فاکتورها', icon: '🧾', count: 0 },
+    { value: 'id_card', label: 'کارت ملی', icon: '🆔', count: 0 },
+    { value: 'other', label: 'سایر', icon: '📄', count: 0 }
+  ];
 
-  const getFileIcon = (mimeType: string) => {
-    if (mimeType.startsWith('application/pdf')) {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-red-50">
-          <svg className="h-12 w-12 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
-        </div>
-      );
-    }
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-gray-50">
-        <svg className="h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-        </svg>
-      </div>
-    );
-  };
-
-  const getDocumentTypeLabel = (type: string) => {
-    const types: { [key: string]: string } = {
-      'check': '💵 چک',
-      'contract': '📋 قرارداد',
-      'invoice': '🧾 فاکتور',
-      'id_card': '🆔 کارت ملی',
-      'birth_certificate': '📄 شناسنامه',
-      'license': '🎓 گواهینامه',
-      'letter': '💌 نامه',
-      'form': '📝 فرم',
-      'report': '📊 گزارش',
-      'other': '📄 سند',
-      'unknown': '❓ نامشخص'
-    };
-    return types[type] || types['unknown'];
-  };
-
-  const getStatusLabel = (status: string) => {
-    const statuses: { [key: string]: { label: string; color: string } } = {
-      'pending': { label: '⏳ در انتظار', color: 'text-yellow-600 bg-yellow-50' },
-      'processing': { label: '🔄 در حال پردازش', color: 'text-blue-600 bg-blue-50' },
-      'completed': { label: '✅ تکمیل شده', color: 'text-green-600 bg-green-50' },
-      'failed': { label: '❌ خطا', color: 'text-red-600 bg-red-50' }
-    };
-    return statuses[status] || statuses['pending'];
-  };
-
-  // فیلتر کردن فایل‌ها بر اساس جستجو و فیلترها
-  const filteredFiles = useMemo(() => {
-    return files.filter(file => {
-      const matchesSearch = searchTerm === '' ||
-        file.originalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        getDocumentTypeLabel(file.fileType).toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || file.status === statusFilter;
-      const matchesType = typeFilter === 'all' || file.fileType === typeFilter;
-      return matchesSearch && matchesStatus && matchesType;
-    });
-  }, [files, searchTerm, statusFilter, typeFilter]);
+  // بارگذاری فایل‌ها
+  useEffect(() => {
+    loadFiles();
+  }, []);
 
   const loadFiles = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const response = await ApiService.getFiles();
-      if (response.success && response.data?.files) {
-        setFiles(response.data.files);
-      } else {
-        setError(response.message || 'خطا در بارگیری فایل‌ها');
-        setFiles([]);
-      }
+      const result = await getFilesList(1, 100);
+      setFiles(result.files || []);
     } catch (error) {
-      setError('خطا در بارگیری فایل‌ها');
+      console.error('Error loading files:', error);
       setFiles([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // جستجو در فایل‌ها
   useEffect(() => {
-    loadFiles();
-  }, [refreshTrigger]);
-
-  const handleDelete = async (fileId: string) => {
-    if (!confirm('آیا از حذف این فایل اطمینان دارید؟')) return;
-    try {
-      const response = await ApiService.deleteFile(fileId);
-      if (response.success) {
-        setFiles(files.filter(f => f.id !== fileId));
-        if (selectedFile?.id === fileId) {
-          setSelectedFile(null);
-          setShowModal(false);
+    const performSearch = async () => {
+      if (searchTerm.trim()) {
+        try {
+          const result = await searchFiles(searchTerm);
+          setFiles(result.files || []);
+        } catch (error) {
+          console.error('Search error:', error);
         }
       } else {
-        alert(response.message || 'خطا در حذف فایل');
+        loadFiles();
       }
-    } catch {
-      alert('خطا در حذف فایل');
+    };
+
+    const debounceTimer = setTimeout(performSearch, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [searchTerm]);
+
+  // فیلتر و مرتب‌سازی فایل‌ها
+  const filteredAndSortedFiles = useMemo(() => {
+    let filtered = files.filter(file => {
+      if (selectedFilter === 'all') return true;
+      return file.fileType === selectedFilter;
+    });
+
+    // مرتب‌سازی
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (sortBy) {
+        case 'date':
+          comparison = new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
+          break;
+        case 'name':
+          comparison = a.originalName.localeCompare(b.originalName, 'fa');
+          break;
+        case 'size':
+          comparison = a.fileSize - b.fileSize;
+          break;
+      }
+      
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return filtered;
+  }, [files, selectedFilter, sortBy, sortOrder]);
+
+  // محاسبه تعداد فایل‌ها برای هر فیلتر
+  const filtersWithCount = useMemo(() => {
+    return fileTypeFilters.map(filter => ({
+      ...filter,
+      count: filter.value === 'all' 
+        ? files.length 
+        : files.filter(f => f.fileType === filter.value).length
+    }));
+  }, [files]);
+
+  // تابع‌های کمکی
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 بایت';
+    const k = 1024;
+    const sizes = ['بایت', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  };
+
+  const getFileIcon = (file: FileUpload) => {
+    if (file.mimeType?.startsWith('image/')) {
+      return file.downloadUrl;
     }
+    
+    const iconMap: { [key: string]: string } = {
+      'check': '💵',
+      'contract': '📋',
+      'invoice': '🧾',
+      'id_card': '🆔',
+      'birth_certificate': '📄',
+      'license': '🎓',
+      'other': '📄'
+    };
+    
+    return iconMap[file.fileType] || '📄';
   };
 
-  const handleFileClick = (file: FileUpload) => {
-    setSelectedFile(file);
-    setShowModal(true);
-  };
-
-  const handleCopyLink = async (url: string) => {
+  const handleCopyLink = async (downloadUrl: string) => {
     try {
-      await navigator.clipboard.writeText(url);
-      alert('لینک دانلود در کلیپ‌بورد کپی شد!');
-    } catch {
-      alert('خطا در کپی کردن لینک');
+      await navigator.clipboard.writeText(downloadUrl);
+      alert('لینک کپی شد! 📋');
+    } catch (error) {
+      console.error('Failed to copy:', error);
     }
-  };
-
-  const clearFilters = () => {
-    setSearchTerm('');
-    setStatusFilter('all');
-    setTypeFilter('all');
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <p className="text-gray-600">در حال بارگیری فایل‌ها...</p>
+      <div className="w-full max-w-6xl mx-auto p-4">
+        <div className="text-center py-12">
+          <div className="animate-spin w-8 h-8 border-2 border-white/30 border-t-white rounded-full mx-auto mb-4"></div>
+          <p className="text-white/70">در حال بارگذاری فایل‌ها...</p>
         </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-4">
-        <div className="flex items-center space-x-3 space-x-reverse">
-          <svg className="h-6 w-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-red-800">{error}</p>
-        </div>
-        <button 
-          onClick={loadFiles}
-          className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-        >
-          تلاش مجدد
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto py-8" style={{ direction: 'rtl', fontFamily: 'Vazirmatn' }}>
-      {/* هدر و کنترل‌ها */}
-      <div className="flex justify-between items-center bg-white rounded-lg p-4 shadow-sm">
-        <div>
-          <h3 className="text-xl font-bold text-gray-900">گالری فایل‌ها</h3>
-          <p className="text-gray-600 text-sm mt-1">
-            {filteredFiles.length} از {files.length} فایل
-          </p>
-        </div>
-        <div className="flex items-center space-x-2 space-x-reverse">
-          <button
-            onClick={() => setView('grid')}
-            className={`p-3 rounded-lg transition-all ${
-              view === 'grid' 
-                ? 'bg-blue-600 text-white shadow-lg' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-            title="نمایش گالری"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setView('list')}
-            className={`p-3 rounded-lg transition-all ${
-              view === 'list' 
-                ? 'bg-blue-600 text-white shadow-lg' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-            title="نمایش لیستی"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+    <div className="w-full max-w-6xl mx-auto p-4 space-y-6">
+      {/* هدر و آمار */}
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white">گالری فایل‌ها</h2>
+            <p className="text-white/70">
+              {files.length} فایل از {filteredAndSortedFiles.length} فایل
+            </p>
+          </div>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+            >
+              {viewMode === 'grid' ? <List className="w-5 h-5" /> : <Grid3X3 className="w-5 h-5" />}
+            </button>
+            
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`p-2 rounded-lg transition-colors ${
+                showFilters ? 'bg-blue-500/20 text-blue-300' : 'bg-white/10 hover:bg-white/20 text-white'
+              }`}
+            >
+              <Filter className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* فیلترها و جستجو */}
-      <div className="bg-white rounded-lg p-4 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* جستجو */}
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">جستجو</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="جستجو بر اساس نام فایل یا نوع سند..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-          </div>
-          {/* فیلتر وضعیت */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">وضعیت</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">همه وضعیت‌ها</option>
-              <option value="pending">⏳ در انتظار</option>
-              <option value="processing">🔄 در حال پردازش</option>
-              <option value="completed">✅ تکمیل شده</option>
-              <option value="failed">❌ خطا</option>
-            </select>
-          </div>
-          {/* فیلتر نوع */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">نوع سند</label>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">همه انواع</option>
-              <option value="check">💵 چک</option>
-              <option value="contract">📋 قرارداد</option>
-              <option value="invoice">🧾 فاکتور</option>
-              <option value="id_card">🆔 کارت ملی</option>
-              <option value="birth_certificate">📄 شناسنامه</option>
-              <option value="license">🎓 گواهینامه</option>
-              <option value="letter">💌 نامه</option>
-              <option value="form">📝 فرم</option>
-              <option value="report">📊 گزارش</option>
-              <option value="other">📄 سند</option>
-            </select>
-          </div>
+      {/* جستجو و فیلترها */}
+      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 space-y-4">
+        {/* جستجو */}
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/50" />
+          <input
+            type="text"
+            placeholder="جستجو در اسناد، نام فایل و محتوا..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white/10 border border-white/20 rounded-xl px-12 py-3 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/20 transition-all"
+          />
         </div>
-        {(searchTerm || statusFilter !== 'all' || typeFilter !== 'all') && (
-          <div className="mt-4">
-            <button
-              onClick={clearFilters}
-              className="text-sm text-gray-600 hover:text-gray-800 flex items-center"
-            >
-              <svg className="h-4 w-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              پاک کردن فیلترها
-            </button>
+
+        {/* فیلترها */}
+        {showFilters && (
+          <div className="space-y-4">
+            {/* فیلتر نوع فایل */}
+            <div>
+              <h3 className="text-white font-medium mb-3">نوع سند:</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                {filtersWithCount.map((filter) => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setSelectedFilter(filter.value)}
+                    className={`p-3 rounded-lg border transition-all text-sm ${
+                      selectedFilter === filter.value
+                        ? 'border-blue-400 bg-blue-500/20 text-blue-100'
+                        : 'border-white/20 bg-white/10 text-white/80 hover:border-white/40'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">{filter.icon}</div>
+                    <div className="font-medium">{filter.label}</div>
+                    <div className="text-xs opacity-70">({filter.count})</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* مرتب‌سازی */}
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-white/70 text-sm">مرتب‌سازی:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'date' | 'name' | 'size')}
+                  className="bg-white/10 border border-white/20 rounded-lg px-3 py-1 text-white text-sm focus:outline-none focus:border-blue-400"
+                >
+                  <option value="date">تاریخ</option>
+                  <option value="name">نام</option>
+                  <option value="size">حجم</option>
+                </select>
+              </div>
+              
+              <button
+                onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                className="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors text-sm"
+              >
+                {sortOrder === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />}
+                {sortOrder === 'asc' ? 'صعودی' : 'نزولی'}
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* نمایش فایل‌ها */}
-      {filteredFiles.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="w-24 h-24 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-            <svg className="h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-            </svg>
+      {/* لیست فایل‌ها */}
+      {filteredAndSortedFiles.length === 0 ? (
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-12 border border-white/20 text-center">
+          <div className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-4">
+            <FileText className="w-8 h-8 text-white/50" />
           </div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            {files.length === 0 ? 'هیچ فایلی یافت نشد' : 'نتیجه‌ای یافت نشد'}
-          </h3>
-          <p className="text-gray-500">
-            {files.length === 0 ? 'هنوز فایلی آپلود نکرده‌اید' : 'فیلترهای اعمال شده نتیجه‌ای ندارند'}
+          <h3 className="text-xl font-semibold text-white mb-2">فایلی یافت نشد</h3>
+          <p className="text-white/70">
+            {searchTerm ? 'جستجوی شما نتیجه‌ای نداشت' : 'هنوز فایلی آپلود نکرده‌اید'}
           </p>
         </div>
       ) : (
-        <div className={view === 'grid' ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4' : 'space-y-3'}>
-          {filteredFiles.map((file) => (
-            view === 'grid' ? (
-              <div
-                key={file.id}
-                className="group relative bg-white rounded-lg shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer overflow-hidden border border-gray-200"
-                onClick={() => handleFileClick(file)}
-              >
-                <div className="w-[150px] h-[150px] overflow-hidden bg-gray-50 flex items-center justify-center">
-                  {(file.mimeType.startsWith('image/')) ? (
-                    <img
-                      src={file.previewUrl || `http://localhost:5199/uploads/${file.filename}`}
-                      alt={file.originalName}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = '/placeholder-image.png';
-                      }}
-                    />
-                  ) : (
-                    getFileIcon(file.mimeType)
-                  )}
-                </div>
-                <div className="p-3">
-                  <p className="font-medium text-gray-900 text-sm truncate" title={file.originalName}>
-                    {file.originalName}
-                  </p>
-                  <p className="text-gray-500 text-xs mt-1">
-                    {formatFileSize(file.fileSize)}
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusLabel(file.status).color}`}>
-                      {getStatusLabel(file.status).label}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {getDocumentTypeLabel(file.fileType)}
-                    </span>
-                  </div>
-                </div>
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="flex space-x-1 space-x-reverse">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCopyLink(file.downloadUrl);
-                      }}
-                      className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center hover:bg-green-700 transition-colors"
-                      title="کپی لینک"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.open(file.downloadUrl, '_blank');
-                      }}
-                      className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors"
-                      title="دانلود"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(file.id);
-                      }}
-                      className="w-8 h-8 bg-red-600 text-white rounded-full flex items-center justify-center hover:bg-red-700 transition-colors"
-                      title="حذف"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              // حالت لیستی (همان کد قبلی)
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-all cursor-pointer"
-                onClick={() => handleFileClick(file)}
-              >
-                <div className="flex items-center space-x-4 space-x-reverse">
-                  <div className="w-16 h-16 flex-shrink-0">
-                    {file.mimeType.startsWith('image/') && file.previewUrl ? (
-                      <img 
-                        src={`http://localhost:5199/uploads/${file.filename}`}
+        <div className={`${
+          viewMode === 'grid' 
+            ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4' 
+            : 'space-y-4'
+        }`}>
+          {filteredAndSortedFiles.map((file) => (
+            <div
+              key={file.id}
+              className={`bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl overflow-hidden hover:border-white/40 hover:bg-white/20 transition-all group ${
+                viewMode === 'list' ? 'p-4' : ''
+              }`}
+            >
+              {viewMode === 'grid' ? (
+                // نمایش Grid
+                <>
+                  <div className="aspect-square relative">
+                    {file.mimeType?.startsWith('image/') ? (
+                      <img
+                        src={file.downloadUrl}
                         alt={file.originalName}
-                        className="w-full h-full object-cover rounded"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.src = '/placeholder-image.png';
-                        }}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gray-50 rounded">
-                        {getFileIcon(file.mimeType)}
+                      <div className="w-full h-full flex items-center justify-center bg-white/5">
+                        <div className="text-4xl">{getFileIcon(file)}</div>
+                      </div>
+                    )}
+                    
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <button
+                        onClick={() => setSelectedFile(file)}
+                        className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
+                        title="مشاهده جزئیات"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <a
+                        href={file.downloadUrl}
+                        download
+                        className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
+                        title="دانلود"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+                      <button
+                        onClick={() => handleCopyLink(file.downloadUrl)}
+                        className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
+                        title="کپی لینک"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3 space-y-2">
+                    <h3 className="text-white font-medium text-sm truncate" title={file.originalName}>
+                      {file.originalName}
+                    </h3>
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>{formatFileSize(file.fileSize)}</span>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        file.status === 'completed' ? 'bg-green-500/20 text-green-300' :
+                        file.status === 'processing' ? 'bg-blue-500/20 text-blue-300' :
+                        file.status === 'failed' ? 'bg-red-500/20 text-red-300' :
+                        'bg-yellow-500/20 text-yellow-300'
+                      }`}>
+                        {file.status === 'completed' ? '✅' :
+                         file.status === 'processing' ? '🔄' :
+                         file.status === 'failed' ? '❌' : '⏳'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-white/50">
+                      {formatDate(file.uploadedAt)}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                // نمایش List
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-white/5">
+                    {file.mimeType?.startsWith('image/') ? (
+                      <img
+                        src={file.downloadUrl}
+                        alt={file.originalName}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-2xl">{getFileIcon(file)}</div>
                       </div>
                     )}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">{file.originalName}</p>
-                    <p className="text-sm text-gray-500">
-                      {getDocumentTypeLabel(file.fileType)} • {formatFileSize(file.fileSize)}
-                    </p>
-                    <div className="flex items-center space-x-2 space-x-reverse mt-1">
-                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusLabel(file.status).color}`}>
-                        {getStatusLabel(file.status).label}
+                  
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-medium truncate">
+                      {file.originalName}
+                    </h3>
+                    <div className="flex items-center gap-4 mt-1 text-sm text-white/60">
+                      <span>{formatFileSize(file.fileSize)}</span>
+                      <span>{formatDate(file.uploadedAt)}</span>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        file.status === 'completed' ? 'bg-green-500/20 text-green-300' :
+                        file.status === 'processing' ? 'bg-blue-500/20 text-blue-300' :
+                        file.status === 'failed' ? 'bg-red-500/20 text-red-300' :
+                        'bg-yellow-500/20 text-yellow-300'
+                      }`}>
+                        {file.status === 'completed' ? '✅ تکمیل شده' :
+                         file.status === 'processing' ? '🔄 در حال پردازش' :
+                         file.status === 'failed' ? '❌ خطا' : '⏳ در انتظار'}
                       </span>
                     </div>
+                    {file.extractedText && (
+                      <p className="text-xs text-white/50 mt-1 truncate">
+                        {file.extractedText.substring(0, 100)}...
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="flex-shrink-0 flex gap-2">
+                    <button
+                      onClick={() => setSelectedFile(file)}
+                      className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+                      title="مشاهده جزئیات"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <a
+                      href={file.downloadUrl}
+                      download
+                      className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+                      title="دانلود"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                    <button
+                      onClick={() => handleCopyLink(file.downloadUrl)}
+                      className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+                      title="کپی لینک"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2 space-x-reverse">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopyLink(file.downloadUrl);
-                    }}
-                    className="text-green-600 hover:text-green-800 p-2"
-                    title="کپی لینک"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.open(file.downloadUrl, '_blank');
-                    }}
-                    className="text-blue-600 hover:text-blue-800 p-2"
-                    title="دانلود"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(file.id);
-                    }}
-                    className="text-red-600 hover:text-red-800 p-2"
-                    title="حذف"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            )
+              )}
+            </div>
           ))}
         </div>
       )}
 
-      {/* مودال نمایش جزئیات */}
-      {showModal && selectedFile && (
+      {/* مودال جزئیات فایل */}
+      {selectedFile && (
         <FileDetails
           file={selectedFile}
-          onClose={() => {
-            setShowModal(false);
-            setSelectedFile(null);
-          }}
+          onClose={() => setSelectedFile(null)}
         />
       )}
     </div>
   );
 };
 
-export default FileList; 
+export default FileList;

@@ -85,16 +85,6 @@ export interface SystemSettings {
   auto_delete_failed?: string;
   notification_email?: string;
 }
-  openai_api_key: string;
-  max_file_size: string;
-  allowed_file_types: string;
-  queue_enabled?: string;
-  ocr_language?: string;
-  ai_model?: string;
-  processing_timeout?: string;
-  auto_delete_failed?: string;
-  notification_email?: string;
-}
 
 // آمار سیستم
 export interface SystemStats {

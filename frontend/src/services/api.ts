@@ -1,8 +1,9 @@
 // frontend/src/services/api.ts - سرویس API با error handling و caching بهبود یافته
 import type { FileUpload, FileListResponse, SystemSettings, ApiResponse } from '../types';
 
-// کانفیگ API
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5199/api';
+// کانفیگ API - استفاده از proxy
+const API_BASE_URL = '/api'; // Use proxy instead of direct localhost
+const UPLOADS_BASE_URL = 'http://localhost:5199/uploads';
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 
 // Cache برای درخواست‌ها
@@ -191,7 +192,14 @@ export const uploadFile = async (
           if (response.success) {
             // Clear file list cache after successful upload
             clearCache('files');
-            resolve(response.data);
+            
+            // Fix download URL
+            const fileData = response.data;
+            if (fileData && fileData.filename) {
+              fileData.downloadUrl = `${UPLOADS_BASE_URL}/${fileData.filename}`;
+            }
+            
+            resolve(fileData);
           } else {
             reject(new ApiError(response.message || 'خطا در آپلود فایل'));
           }
